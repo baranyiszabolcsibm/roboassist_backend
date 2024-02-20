@@ -6,6 +6,7 @@ import json
 
 app = Flask(__name__)
 CORS(app)   #https://flask-cors.readthedocs.io/en/latest/
+#app.config['JSON_AS_ASCII'] = False
 
 # CORS miatt kell
 @app.before_request
@@ -39,6 +40,43 @@ async def extractPdf():
         response.headers.add('Access-Control-Allow-Origin', '*')
         return response
 
+
+
+@app.route('/bmapi/aktakerdes', methods=['GET'])
+async def send_post_chat(): 
+    collection = request.args.get('collection')
+    question = request.args.get('question')
+    resultmsg="&#x1F601 P\u00c9TER\ud83d\udc6e: A dokumentumok alapj\u00e1n a feljelent\u0151 neve Imre P\u00e9ter. Sajnos a dokumentumokban nem tal\u00e1lhat\u00f3 meg a feljelent\u0151 telefonsz\u00e1ma.";
+
+    #
+    # response = response = jsonify(resultmsg)
+    # resx = resultmsg.encode('utf-8').decode('utf-8')
+    # print(resx)
+    # response.headers.add('Access-Control-Allow-Origin', '*')
+    # response.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    # return response 
+
+    payload = {
+        "collection": collection,
+        "prompt": question,
+        "temperature": 0
+        }
+    token = "5pBHDjr4bkNFc1xdqIMR6INLItKuPvZrf8zNdc6enlXqhy8qVO8YCYKRcdd"
+    header = {"Authorization": f"Bearer {token}"}
+    async with aiohttp.ClientSession() as session:
+        async with session.post(chat_url, json=payload, headers=header) as response:
+            if response.status == 200:
+                data = await response.text()
+                print(data)
+                resultmsg = data
+            else:
+                print(f"Error: {response.status}")  
+
+        resultmsg = resultmsg.encode('ascii', 'xmlcharrefreplace').decode('utf-8')             
+        response = jsonify(resultmsg)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        #response.headers['Content-Type'] = 'text/plain; charset=utf-8'
+        return response 
 
     
 @app.route('/bmapi/feljelent', methods=['GET', 'POST'])   # mondket method kell mert a browser elsőször egy getet küld implicite
@@ -123,7 +161,7 @@ async def  getStatlapMetadata() :
             response = json.loads(file_metadata)
             #response.headers.add('Access-Control-Allow-Origin', '*')
             jsonarrayresp=json_to_array(response)
-            return jsonify(jsonarrayresp)
+            return jsonarrayresp
 
 
 
@@ -222,6 +260,9 @@ def switchSystem(execsystem):   # igy az url vegen van a filename
         baseurl = GPT4URL    
     return "System changed to : {0} : {1}".format(execsystem,baseurl)
 
+
+
+
 ##################################################
 
 
@@ -253,9 +294,12 @@ def json_to_array(json_obj):
     return json_array
 
 if __name__ == '__main__':
+    
     baseurl='http://91.107.238.245:8080'
     MISTRALURL ='http://91.107.238.245:8080'
     GPT4URL ='http://91.107.238.245:8008'
+    chat_url = "http://91.107.238.245:5000/collections/stream"
+
     reset_url = baseurl+"/reset"
     extract_url = baseurl+"/extract-pdf/"
     get_file_metadata_url = baseurl+"/get-meta-pdf"
@@ -267,7 +311,7 @@ if __name__ == '__main__':
     get_nyomozas_elrendelo_metadata_url  =  baseurl+"/get_nyomozas_elrendelo_metadata"   
 
     extract_stat_adatlap_fill_url = baseurl+"/stat_adatlap_fill/"
-    get_stat_adatlap_fill_url  =  baseurl+"/get_stat_adatlap_fill_metadata"  
+    get_stat_adatlap_fill_url  =  baseurl+"/get_stat_adatlap_fill"  
 
     extract_stat_adatlap_btk_full_categorize_url = baseurl+"/stat_adatlap_btk_full_categorize/"
     get_stat_adatlap_btk_categories_url  =  baseurl+"/get_stat_adatlap_btk_categories"  
@@ -275,6 +319,7 @@ if __name__ == '__main__':
     extract_summary_url = baseurl+"/summarizer/"
     get_summary_url  =  baseurl+"/get_summary" 
 
+    
     app.run(debug=True)
 
 
