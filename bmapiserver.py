@@ -56,6 +56,7 @@ async def send_post_chat():
     # response.headers['Content-Type'] = 'text/plain; charset=utf-8'
     # return response 
 
+    question += " A dokumentum első forrását a válaszod végén ismételten add meg a következő formában is {{oldalszám}}"
     payload = {
         "collection": collection,
         "prompt": question,
@@ -72,7 +73,10 @@ async def send_post_chat():
             else:
                 print(f"Error: {response.status}")  
 
-        resultmsg = resultmsg.encode('ascii', 'xmlcharrefreplace').decode('utf-8')             
+        resultmsg =resultmsg.replace("\\\"","\"")     
+        resultmsg = resultmsg.encode('ascii', 'xmlcharrefreplace').decode('utf-8')
+        resultmsg =resultmsg.replace("\n","<br />")      
+  
         response = jsonify(resultmsg)
         response.headers.add('Access-Control-Allow-Origin', '*')
         #response.headers['Content-Type'] = 'text/plain; charset=utf-8'
@@ -299,6 +303,7 @@ if __name__ == '__main__':
     MISTRALURL ='http://91.107.238.245:8080'
     GPT4URL ='http://91.107.238.245:8008'
     chat_url = "http://91.107.238.245:5000/collections/stream"
+
 
     reset_url = baseurl+"/reset"
     extract_url = baseurl+"/extract-pdf/"
