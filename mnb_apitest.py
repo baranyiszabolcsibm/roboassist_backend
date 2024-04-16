@@ -36,7 +36,11 @@ def mergePdf(pdflist,summaryid):
   #pdflist = ["21.pdf", "25.pdf"]
   for p in pdflist:
     pdfpath=basepath+p
-    merger.append(pdfpath)
+    try:
+      merger.append(pdfpath)
+    except:
+      print("Hiba a fájl olvasásakor: ",pdfpath)
+      continue
   merger.write(basepath+"summary_{}.pdf".format(summaryid))
   merger.close()
 
@@ -63,7 +67,7 @@ async def main():
               sumid= str(uuid.uuid1())
               mergePdf(json_obj['outputs'],sumid)
               #for item in json_obj['outputs']:
-              #   print(basepath+item)
+              #   print(basepath+item)Milyen ajánlásokat készített az MNB hitelintézeti hitelvállalási kockázatok témakörben
                  
 
               ##print("File feltöltés")
@@ -74,6 +78,10 @@ async def main():
               json_obj = json.loads(restxt)
               page_numbers = find_page_numbers(json_obj['answer'])
               print(page_numbers)
+            
+
+              
+
 
           except KeyboardInterrupt:
               break 

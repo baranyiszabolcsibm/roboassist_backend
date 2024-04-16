@@ -1,8 +1,14 @@
+import html
 from flask import Flask, jsonify,request,Response,send_file   #pip install  flask   flask[async]
 from flask_cors import CORS #pip install -U flask-cors
 import aiohttp
 import asyncio
 import json
+import os
+from PyPDF2 import PdfMerger   ##pip install PyPDF2
+import uuid
+import re
+
 
 app = Flask(__name__)
 CORS(app)   #https://flask-cors.readthedocs.io/en/latest/
@@ -17,65 +23,137 @@ def handle_preflight():
         return res 
 
 
-#http://localhost:5000/todo/api/v1.0/extractPdf
-#@app.route('/todo/api/v1.0/extractPdf', methods=['GET'])
-@app.route('/mnbapi/ragsearch', methods=['GET'])
-async def extractPdf():
-    filename = request.args.get('filename')
-    pdf_file_path = './pdftmp/'+filename 
 
-    # get parames from request
-    #  use  paramless function async def extractPdf(filename)
-    #     category = request.args.get('category')
-    #     content_id = request.args.get('content_id')
-    fullanswer = ""
+@app.route('/mnbapi/agentcall', methods=['GET'])
+async def agentcall():
+    question = request.args.get('question')
+    payload = {
+        "input": question,
+        "chat_history": []
+        }
+    result = {
+        'docs': [],
+        'pages': [],
+        'summarydoc': 's',
+        'answer': 'x'
+    }
     async with aiohttp.ClientSession() as session:
-        reset_response = await empty_post(session, reset_url)
-        print("Reset válasz:", reset_response)
-        extract_response = await send_post_request_with_file(session, extract_url, pdf_file_path)
-        print("File kivonatoló AI válasz:", extract_response)
-        file_metadata = await get_metadata_summary(session, get_file_metadata_url)
-        print("PDF file metadta tartalma:", file_metadata)  
-        response = jsonify(file_metadata)
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        return response
+        async with session.post(agent_url, json=payload ) as response:
+            if response.status == 200:
+                data = await response.text()
+                print(data)
+                json_obj = json.loads(data)
+
+                # await asyncio.sleep(10)
+
+                # rag_response = await send_post(session,ragquery_url,question)
+                # json_subobj = json.loads(rag_response)
+                # if len(json_subobj['outputs']) >0:
+                #     docs_str = ', '.join(json_subobj['docs'])
+                #     result['answer'] += '\n Referencia: \n '+docs_str + '\n\n'
+
+                result['answer'] = '<html><body>' + json_obj['output'].replace('\n', '<br>').encode('ascii', 'xmlcharrefreplace').decode() + '</body></html>'
+                # result['summarydoc'] = json_subobj['docs'] [0]
+            else:
+                print(f"Error: {response.status}") 
+                result['answer'] = "Hiba az agent hívásakor"
+
+  
+        return jsonify(result)
 
 
+#http://localhost:5000//mnbapi/ragsearch?question="mi a szavatolótőke
+#@app.route('/todo/api/v1.0/extractPdf', methods=['GET'])
+    
+@app.route('/mnbapi/ragsearch', methods=['GET'])
+async def ragsearch():
+    question = request.args.get('question')
+    question = html.unescape(question)
+    print(question)
 
+    result = {
+        'docs': [],
+        'pages': [],
+        'summarydoc': 's',
+        'answer': 'x'
+    }
+    async with aiohttp.ClientSession() as session:  
+        rag_response = await send_post(session,ragquery_url,question)
+        json_obj = json.loads(rag_response)    ## válasz json doksikista ahol talált valamit
+        print(rag_response )
 
+        if len(json_obj['outputs']) == 0:
+            result['answer'] = 'Nincs találat'      
+            return jsonify(result)
+        
+        sumid= str(uuid.uuid1())
+        result['summarydoc'] =  mergePdf(json_obj['outputs'],sumid) ## összefűzött doksikista
+        summarypdfPath = basepath+result['summarydoc']
+        result['docs'] = json_obj['outputs']
+        
+        #await asyncio.sleep(10)
 
-@app.route('/mnbapi/uploadPdf', methods=['GET', 'POST'])   # mondket method kell mert a browser elsőször egy getet küld implicite
-async def uploadPdf():
-    if request.method == 'GET':
-        response_headers = {'Access-Control-Allow-Origin': '*'  }
-        return response
+        ## visszaadott összefűzött doksi elemzése
+        url_with_question = process_pdf_url.format(question)
+        analyzeResult = await send_post_request_with_file(session,url_with_question,summarypdfPath)
+        print(analyzeResult)
+        json_obj = json.loads(analyzeResult)
+        page_numbers = find_page_numbers(json_obj['answer'])
+        result['pages'] = page_numbers  ## a page_numbers a process-pdf válaszából jön
+        result['answer'] = '<html><body>' + json_obj['answer'].replace('\n', '<br>').encode('ascii', 'xmlcharrefreplace').decode() + '</body></html>'
+
+        return jsonify(result)
+    
+
+@app.route('/mnbapi/getPdf/<filename>', methods=['GET'])
+def get_pdf(filename):   # igy az url vegen van a filename
+     # filename = request.args.get('filename')         ez a likommentezett módszernél kell
+    # Path to the PDF file
+    pdf_path = './pdftmp/'+filename
     try:
-        # Get file from request
-        file = request.files['file']
-        filename = file.filename
-        file.save('./pdftmp/usr_'+filename)
-        response_text = "Mentve Rendbe"
-        response = jsonify(response_text)
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        return response
-    except:
-        response = 'Hibavan' ,409
-
-
-
+        return send_file(pdf_path, download_name=filename, mimetype='application/pdf')
+    except FileNotFoundError:
+        # If the file is not found, return a 404 error
+        return 'File not found', 404
+    
 ##################################################
+def mergePdf(pdflist,summaryid):
+  merger = PdfMerger()
+  #pdflist = ["21.pdf", "25.pdf"]
+  for p in pdflist:
+    pdfpath=basepath+p
+    try:
+      merger.append(pdfpath)
+    except:
+      print("Hiba a fájl olvasásakor: ",pdfpath)
+      continue
+  merger.write(basepath+"summary_{}.pdf".format(summaryid))
+  merger.close()
+  return "summary_{}.pdf".format(summaryid)
 
+def find_page_numbers(text):
+    pattern = r'Page (\d+)'
+    matches = re.findall(pattern, text)
+    return [int(num) for num in matches]
 
-async def empty_post(session, url):
-    async with session.post(url) as response:
-        return await response.json() 
+async def send_post(session, url, chatquestion): 
+    payload = {
+        "input": chatquestion
+        }
+    async with session.post(url, json=payload ) as response:
+      if response.status == 200:
+        data = await response.text()
+        print(data)
+        return data
+      else:
+        print(f"Error: {response.status}")  
 
 
 async def send_post_request_with_file(session, url, file_path): 
     mpwriter = aiohttp.MultipartWriter('form-data')
     with open(file_path, 'rb') as f:
         part = mpwriter.append(f)
-        part.set_content_disposition('form-data', name='file', filename=file_path)  
+        part.set_content_disposition('form-data', name='pdf_file', filename=file_path)  
         async with session.post(url, data=mpwriter) as response:
             return await response.text()
 
@@ -87,32 +165,12 @@ def json_to_array(json_obj):
     return json_array
 
 if __name__ == '__main__':
-    
-    baseurl='http://91.107.238.245:8080'
-    MISTRALURL ='http://91.107.238.245:8080'
-    GPT4URL ='http://91.107.238.245:8008'
-    chat_url = "http://91.107.238.245:5000/collections/stream"
+        # Process the JSON object here
 
-
-    reset_url = baseurl+"/reset"
-    extract_url = baseurl+"/extract-pdf/"
-    get_file_metadata_url = baseurl+"/get-meta-pdf"
-
-    extract_feljelentési_jegyzokonyv_metadata_url = baseurl+"/feljelentési jegyzokonyv_metadata/"
-    get_feljelentési_jegyzokonyv_metadata_url =  baseurl+"/get_feljelentési_jegyzokonyv_metadata"
-
-    extract_nyomozas_elrendelo_metadata_url = baseurl+"/nyomozas_elrendelo_metadata/"
-    get_nyomozas_elrendelo_metadata_url  =  baseurl+"/get_nyomozas_elrendelo_metadata"   
-
-    extract_stat_adatlap_fill_url = baseurl+"/stat_adatlap_fill/"
-    get_stat_adatlap_fill_url  =  baseurl+"/get_stat_adatlap_fill"  
-
-    extract_stat_adatlap_btk_full_categorize_url = baseurl+"/stat_adatlap_btk_full_categorize/"
-    get_stat_adatlap_btk_categories_url  =  baseurl+"/get_stat_adatlap_btk_categories"  
-
-    extract_summary_url = baseurl+"/summarizer/"
-    get_summary_url  =  baseurl+"/get_summary" 
-
+    agent_url = "http://91.107.238.245:8015/mnb_qa_agent"
+    ragquery_url = "http://91.107.238.245:8016/mnb_metadataRAG"
+    process_pdf_url = "http://91.107.238.245:8016/process-pdf/?question={}"
+    basepath = "./pdftmp/"    ## global
     
     app.run(debug=True)
 
