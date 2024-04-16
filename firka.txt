@@ -1,7 +1,0 @@
-http://127.0.0.1:5000/bmapi/extractPdf?filename=C:\tmp\1.pdf
-
-http://127.0.0.1:5000/bmapi/extractPdf?filename=C%3A%5Ctmp%5C1.pdf
-
-http://localhost:5000/bmapi/extractPdf?filename=C:\tmp\1.pdf
-
-http://localhost:5000/bmapi/getPdf
